@@ -17,6 +17,7 @@ The project is an MVP for **Job → Candidates** matching, batch-first, realtime
 
 ### Non-goals (MVP)
 - Candidate → Jobs (this is Phase 2, do not implement unless explicitly requested).
+- Do not comment code.
 - Deployment, infra, monitoring/observability.
 - UI/front-end.
 
@@ -57,16 +58,58 @@ Any change that conflicts with these constraints should be rejected or flagged.
 
 ---
 
-## 3. Tech Stack & Libraries (Defaults)
+## 3. Tech Stack & Libraries (2026, Open-Source & Free)
 
-- **Language**: Python 3.11+
-- **Database**: PostgreSQL 15/16 with **pgvector** extension.
-- **Embeddings**: Hugging Face **sentence-transformers**.
-  - Default model: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
-- **Skill extraction**: taxonomy + synonyms + dictionary/regex + fuzzy matching via **rapidfuzz**.
-- **API (only if/when needed)**: FastAPI.
+All core components must be **free to use** and preferably **open-source**. Do **not** introduce paid/SaaS dependencies without explicit approval.
 
-When adding new components, stay aligned with this stack unless the user explicitly approves a deviation.
+- **Core language & runtime**
+  - Python **3.12+** (CPython 3.12 as default).
+
+- **Database & storage**
+  - PostgreSQL **16+** with **pgvector** extension (pgvector ≥ 0.7.0).
+  - Use native pgvector column types and operators.
+
+- **Embeddings & text models** (Hugging Face, free models only)
+  - Library: `sentence-transformers` and/or `huggingface_hub`.
+  - Default multilingual embedding model (MVP):
+    - `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` **or** a 2026-grade free multilingual model such as `intfloat/multilingual-e5-*`, as long as pgvector storage remains compatible.
+  - Models must be downloadable from Hugging Face for **local inference** (no paid hosted APIs by default).
+
+- **Skill extraction & fuzzy matching**
+  - Taxonomy + synonyms + dictionary/regex rules.
+  - Fuzzy matching via **rapidfuzz** (rapidfuzz ≥ 3.x).
+  - Optional helpers (only if clearly useful):
+    - `regex` for advanced regex features.
+    - `underthesea` (Vietnamese) and/or `spacy` (English) for tokenization/NER.
+
+- **Database access layer**
+  - **SQLAlchemy 2.x** (async or sync) with **psycopg 3** drivers.
+  - Use native pgvector support in SQL/Alchemy instead of custom vector hacks.
+
+- **API & realtime upload layer**
+  - Framework: **FastAPI**.
+  - Validation / schemas: **Pydantic v2**.
+  - Patterns: SQLAlchemy 2.x sessions, async endpoints where appropriate.
+  - File uploads (resumes): use FastAPI's async file handling for CSV/Excel/PDF.
+
+- **Frontend (optional UI)**
+  - Build tool: **Vite 5.x**
+  - Framework: **React 18.x**
+  - Routing: **React Router v6**
+  - Styling: **Tailwind CSS 3.x**
+  - Data fetching: **SWR 2.x**
+  - Form handling: **React Hook Form**
+  - File uploads: **React Dropzone**
+  - TypeScript: **5.3+**
+
+- **OCR for resumes (PDF/image-like content)**
+  - MUST use **free, open-source OCR** only:
+    - Local **Tesseract** via `pytesseract`, and/or
+    - Free **Hugging Face** vision/OCR models (e.g., TrOCR/Donut) running locally.
+  - "DeepSeek" OCR is allowed **only** if a free, self-hostable model is available; otherwise fall back to Tesseract or HF models.
+  - Never rely on paid OCR SaaS (Google Vision, AWS Textract, Azure Cognitive Services, etc.) in this MVP.
+
+When adding new components, keep them aligned with this **2026, open-source-first stack** unless the user explicitly approves a deviation.
 
 ---
 
@@ -317,7 +360,7 @@ Implement and optimize this workflow **first**:
    - Store canonical skills and evidence in `extracted_skills_*` tables.
 
 4. **Compute embeddings + store in pgvector**
-   - Use `paraphrase-multilingual-MiniLM-L12-v2` by default.
+  - Use `paraphrase-multilingual-MiniLM-L12-v2` by default (384-dim sentence-transformer; still a solid 2025 baseline for vi/en).
    - Batch processing with GPU/CPU as available.
    - Store vectors in `job_embeddings` and `candidate_embeddings`.
 
@@ -436,3 +479,75 @@ Before you write code, verify:
 - [ ] Design is **batch-first** but leaves a clear path for realtime updates.
 
 If any of these are not true for the change you are about to make, stop and adjust the design.
+
+---
+
+## 12. Repo & Module Structure (AI / BE / FE)
+
+To keep this MVP clean and extensible, organize code into clearly separated modules/packages:
+
+- **AI package** (e.g., `ai/` or `services.ai`)
+  - Embedding models, sentence-transformers integration.
+  - Skill extraction, taxonomy + rapidfuzz helpers.
+  - Pure data/ML logic only; no direct HTTP or DB access.
+
+- **Backend package** (e.g., `be/` or `services.backend`)
+  - PostgreSQL/pgvector access, SQLAlchemy models, repositories.
+  - Batch pipelines: ingestion, normalization, extraction, embeddings, matching, shortlist persistence.
+  - Any FastAPI endpoints (if added later) and background workers.
+
+- **Frontend package** (e.g., `fe/` or a separate app)
+  - Only if/when a UI is explicitly requested.
+  - Keep frontend code isolated from Python backend/AI modules.
+
+Do **not** create a separate "docs" or documentation package. All documentation for this project should remain as Markdown in the `instructions/` folder (or a future `/docs` folder if explicitly requested), not as a runtime code module.
+
+---
+
+## 13. Realtime Resume Upload & OCR
+
+Although the overall design is batch-first, the system MUST support **realtime resume upload** for individual candidates, wired into the same pipelines.
+
+### 13.1 Supported input formats
+
+- **CSV**: multiple candidates per file.
+  - Treat each row as a candidate; map columns to `candidates` fields via a configurable schema (e.g., column → field mapping in JSON/YAML).
+- **Excel** (`.xls`, `.xlsx`): same semantics as CSV; use a configurable sheet + column mapping.
+- **PDF**:
+  - First attempt **text extraction** (e.g., `pypdf`, `pdfplumber`).
+  - If the PDF is image-only / low text, fall back to **OCR** using a free model/library.
+
+Additional file types (e.g., images) may be added later but are **not required** for this MVP unless explicitly requested.
+
+### 13.2 Realtime upload API behavior
+
+- Expose a **FastAPI endpoint** (or equivalent backend handler) for uploading a resume file:
+  - Accepts: file upload + optional metadata (e.g., candidate id, overwrite vs. create-new flag, column mapping profile for CSV/Excel).
+  - Validates file type/size and rejects unsupported or unsafe inputs.
+- For each uploaded file (or row for CSV/Excel):
+  1. **Parse file** into raw text (or structured fields for CSV/Excel).
+  2. **Normalize text** using the same logic as in section 7 (no divergence).
+  3. **Extract skills + evidence** using the shared taxonomy + rapidfuzz logic.
+  4. **Compute embeddings** and write to `candidate_embeddings` (pgvector).
+  5. **Persist/Upsert candidate** in `candidates` + `extracted_skills_candidates`.
+- Reuse the **same Python modules** as batch jobs (ingestion, normalization, extraction, embeddings) to avoid duplicated logic; the realtime path is just a thin API wrapper.
+
+### 13.3 OCR requirements
+
+- OCR MUST be performed using **local, free, open-source** tooling:
+  - Local **Tesseract** via `pytesseract`, OR
+  - A **Hugging Face** OCR model (e.g., TrOCR/Donut) downloaded and run locally.
+- If a free, open-source **DeepSeek OCR** model is available, it may be plugged in as an alternative backend, provided:
+  - It does not require paid APIs.
+  - It can run on the available hardware (CPU/GPU) within reasonable latency for single-resume uploads.
+- Do **not** call proprietary or paid OCR services.
+
+### 13.4 Interaction with matching
+
+- Realtime upload **does not have to re-run matching immediately** for all jobs.
+- At minimum, after a candidate is ingested via realtime upload:
+  - Ensure their embeddings and skills are available for the next batch matching run.
+  - Optionally mark relevant `job_shortlists` records as `is_stale = true` if a future realtime matching mode is enabled.
+- If a true realtime match-on-upload flow is later requested, it must:
+  - Reuse the same pgvector retrieval + rules pipeline defined in sections 5–7.
+  - Still produce full `rule_trace` and versioned metadata for any shortlist items.

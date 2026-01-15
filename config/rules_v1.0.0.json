@@ -1,0 +1,60 @@
+{
+  "rules_version": "v1.0.0",
+  "scope": "global",
+  "hard_rules": [
+    {
+      "id": "must_have_skills",
+      "name": "Must-have skills",
+      "type": "skills_required",
+      "params": {
+        "all_of_required": true,
+        "min_confidence": 0.6
+      }
+    },
+    {
+      "id": "min_years_experience",
+      "name": "Minimum years of experience",
+      "type": "min_years",
+      "params": {
+        "enabled": true
+      }
+    },
+    {
+      "id": "location_match",
+      "name": "Location compatibility",
+      "type": "location",
+      "params": {
+        "enabled": false,
+        "allow_remote": true
+      }
+    }
+  ],
+  "soft_rules": [
+    {
+      "id": "nice_to_have_skills",
+      "name": "Nice-to-have skills",
+      "type": "skills_bonus",
+      "params": {
+        "per_skill_bonus": 5.0,
+        "max_bonus": 20.0
+      }
+    },
+    {
+      "id": "years_experience_bonus",
+      "name": "Years of experience bonus",
+      "type": "years_bonus",
+      "params": {
+        "per_year_bonus": 2.0,
+        "max_bonus": 15.0
+      }
+    },
+    {
+      "id": "domain_match",
+      "name": "Domain expertise bonus",
+      "type": "domain_bonus",
+      "params": {
+        "bonus": 10.0
+      }
+    }
+  ]
+}
